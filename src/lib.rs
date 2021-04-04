@@ -1,14 +1,13 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{fmt, io};
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-use std::fmt;
 use std::fs::read_dir;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
 use chrono::{Datelike, DateTime, TimeZone, Utc};
 use regex::Regex;
 use termion::{color, style};
@@ -70,17 +69,27 @@ lazy_static! {
 }
 
 pub struct Plan {
-    pub to_keep: Vec<(PathBuf, Vec<Period>)>,
+    pub to_keep: Vec<PathBuf>,
     pub to_remove: Vec<PathBuf>,
+    period_map: HashMap<PathBuf, Vec<Period>>,
 }
 
 impl Display for Plan {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}Plan{}", Fg(color::Blue), style::Reset)?;
-        writeln!(f, "\tKeep {}/{} timestamped files\n", self.to_keep.len(), self.to_keep.len() + self.to_remove.len())?;
-        writeln!(f, "\t{}Keep files matching periods", Fg(color::Green))?;
-        for (i, periods) in &self.to_keep {
-            write!(f, "\t\t{}{} {}", Fg(color::Green), i.to_str().unwrap(), style::Reset)?;
+        if self.to_keep.is_empty() && self.to_remove.is_empty() {
+            writeln!(f, "\tDo nothing: no valid timestamps")?;
+            return Ok(());
+        }
+        writeln!(f, "\t{}Keep files matching {}period(s)",
+                 Fg(color::Green),
+                 style::Reset)?;
+        for i in &self.to_keep {
+            write!(f, "\t\t{}{} {}",
+                   Fg(color::Green),
+                   i.to_str().unwrap(),
+                   style::Reset)?;
+            let periods = self.period_map.get(i).unwrap();
             let periods: Vec<_> = periods.iter().map(|x| x.to_string()).collect();
             writeln!(f, "-> ({})", periods.join(","))?;
         }
@@ -95,11 +104,11 @@ impl Display for Plan {
 
 
 impl Plan {
-    pub fn new<P: AsRef<Path>>(config: &SlotConfig, path: P) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(config: &SlotConfig, path: P) -> io::Result<Self> {
         let dir = read_dir(path)?;
         let entries: Vec<_> = dir
             .flatten()
-            .filter_map(|x| BackupEntry::new(x.path()).ok())
+            .filter_map(|x| BackupEntry::new(x.path()))
             .collect();
         Ok(Self::from(config, &entries))
     }
@@ -124,7 +133,8 @@ impl Plan {
         }
         let parsed_set: HashSet<_> = entries.into_iter().map(|x| &x.path).collect();
 
-        let mut to_keep = BTreeMap::new();
+        let mut to_keep = Vec::new();
+        let mut period_map = HashMap::new();
         let mut keep_from_period = |mut slots: Vec<&&BackupEntry>, period| {
             let n = config.get_slot(period);
             slots.sort_by_key(|x| x.timestamp);
@@ -134,8 +144,8 @@ impl Plan {
                 .take(n)
                 .for_each(|&x|
                     {
-                        to_keep.entry(x.clone())
-                            .or_insert(Vec::new()).push(period);
+                        period_map.entry(x.path.clone()).or_insert(Vec::new()).push(period);
+                        to_keep.push(x.clone());
                     }
                 );
         };
@@ -143,31 +153,27 @@ impl Plan {
         keep_from_period(year_slots.values().collect(), Period::Years);
         keep_from_period(month_slots.values().collect(), Period::Months);
         keep_from_period(day_slots.values().collect(), Period::Days);
-
-        let to_keep: Vec<_> = to_keep.into_iter().collect();
+        to_keep.sort_by_key(|x| x.timestamp);
+        to_keep.dedup();
         let entries_set: HashSet<_> = entries.iter().collect();
-        let to_keep_set: HashSet<_> = to_keep.iter().map(|(x, _)| x).collect();
+        let to_keep_set: HashSet<_> = to_keep.iter().collect();
         let mut to_remove: Vec<_> = entries_set.difference(&to_keep_set).collect();
         to_remove.sort_by_key(|x| x.timestamp);
-        let to_remove: Vec<_> = to_remove.iter().map(|&x| x.path.clone()).collect();
-        let to_keep: Vec<_> = to_keep.into_iter().map(|(e, p)| (e.path, p)).collect();
         assert_eq!(parsed_set.len(), &to_keep.len() + &to_remove.len());
+        let to_remove: Vec<_> = to_remove.iter().map(|x| x.path.clone()).collect();
+        let to_keep: Vec<_> = to_keep.into_iter().map(|x| x.path).collect();
         Self {
             to_keep,
             to_remove,
+            period_map,
         }
     }
 }
 
 impl BackupEntry {
-    fn new(path: PathBuf) -> Result<Self> {
-        let timestamp = path
-            .file_name()
-            .context("Couldn't get filename")?
-            .to_str()
-            .and_then(|s| datetime_from_regex(s, &RE))
-            .context("Failed to parse datetime")?;
-        Ok(Self { timestamp, path })
+    fn new(path: PathBuf) -> Option<Self> {
+        let timestamp = datetime_from_regex(path.file_name()?.to_str()?, &RE)?;
+        Some(Self { timestamp, path })
     }
 }
 

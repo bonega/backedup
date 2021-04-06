@@ -63,7 +63,3 @@ fn main() -> Result<()> {
     }
     Ok(())
 }
-
-    let res = Plan::new(&config, "./").unwrap();
-    println!("{}", res);
-}

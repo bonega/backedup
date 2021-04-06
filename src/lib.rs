@@ -68,16 +68,16 @@ impl Config {
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Hash)]
 struct BackupEntry {
-    year: usize,
-    month: usize,
-    day: usize,
-    hour: usize,
-    minute: usize,
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
     path: PathBuf,
 }
 
 impl BackupEntry {
-    fn get_ordering_tuple(&self) -> (usize, usize, usize, usize, usize) {
+    fn get_ordering_tuple(&self) -> (u16, u8, u8, u8, u8) {
         (self.year, self.month, self.day, self.hour, self.minute)
     }
 }

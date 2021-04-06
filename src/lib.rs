@@ -77,6 +77,23 @@ struct BackupEntry {
 }
 
 impl BackupEntry {
+    fn new(path: PathBuf) -> Option<Self> {
+        let m = RE.captures(path.file_name()?.to_str()?)?;
+        let year = m.name("year")?.as_str().parse().ok()?;
+        let month = m.name("month")?.as_str().parse().ok()?;
+        let day = m.name("day")?.as_str().parse().ok()?;
+        let hour = m.name("hour").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
+        let minute = m.name("minute").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
+        Some(Self {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            path,
+        })
+    }
+
     fn get_ordering_tuple(&self) -> (u16, u8, u8, u8, u8) {
         (self.year, self.month, self.day, self.hour, self.minute)
     }
@@ -163,13 +180,16 @@ impl Plan {
         let dir = read_dir(&path).map_err(|_| BackedUpError::ReadDirError { path: path.as_ref().to_path_buf() })?;
         let entries: Vec<_> = dir
             .flatten()
-            .filter_map(|x| BackupEntry::new(x.path()))
+            .map(|x| x.path())
             .collect();
         Ok(Self::from(config, &entries))
     }
 
-    fn from(config: &SlotConfig, entries: &[BackupEntry]) -> Self {
-        let entries: BTreeSet<_> = entries.into_iter().cloned().collect();
+    fn from(config: &SlotConfig, entries: &[PathBuf]) -> Self {
+        let entries: BTreeSet<_> = entries
+            .into_iter()
+            .filter_map(|x| BackupEntry::new(x.clone()))
+            .collect();
         let mut year_slots = BTreeMap::new();
         let mut month_slots = BTreeMap::new();
         let mut day_slots = BTreeMap::new();
@@ -214,28 +234,6 @@ impl Plan {
     }
 }
 
-impl BackupEntry {
-    fn new(path: PathBuf) -> Option<Self> {
-        let m = RE.captures(path.file_name()?.to_str()?)?;
-        let year = m.name("year")?.as_str().parse().ok()?;
-        let month = m.name("month")?.as_str().parse().ok()?;
-        let day = m.name("day")?.as_str().parse().ok()?;
-        let hour = m.name("hour").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-        let minute = m.name("minute").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-        let second = m.name("second").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-        Some(Self {
-            year,
-            month,
-            day,
-            hour,
-            minute,
-            path,
-        })
-        // let timestamp = datetime_from_regex(path.file_name()?.to_str()?, &RE)?;
-        // Some(Self { timestamp, path })
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -243,12 +241,11 @@ mod tests {
 
     use super::*;
 
-    fn create_test_data(mut start_dt: DateTime<Utc>, days: usize) -> Vec<BackupEntry> {
+    fn create_test_data(mut start_dt: DateTime<Utc>, days: usize) -> Vec<PathBuf> {
         let mut result = Vec::new();
         for _ in 0..days {
             let path = PathBuf::from(start_dt.format("%Y-%m-%d").to_string());
-            let entry = BackupEntry::new(path).unwrap();
-            result.push(entry);
+            result.push(path);
             start_dt = start_dt - Duration::days(1);
         }
         result

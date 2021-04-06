@@ -61,6 +61,7 @@ dependencies = [
  "regex",
  "termion",
  "thiserror",
+ "wildmatch",
 ]
 
 [[package]]
@@ -258,6 +259,12 @@ name = "wasi"
 version = "0.10.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
+
+[[package]]
+name = "wildmatch"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07ae7ce410f81ba679081aac1d4874f3b1c328535b630209aa5b4cdaaf895e20"
 
 [[package]]
 name = "winapi"

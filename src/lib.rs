@@ -13,6 +13,7 @@ use regex::Regex;
 use termion::{color, style};
 use termion::color::Fg;
 use thiserror::Error;
+use wildmatch::WildMatch;
 
 #[derive(Error, Debug)]
 pub enum BackedUpError {
@@ -57,12 +58,14 @@ impl SlotConfig {
 }
 
 pub struct Config {
-    slot_config: SlotConfig,
+    slots: SlotConfig,
+    include: Vec<WildMatch>,
 }
 
 impl Config {
-    fn new(slot_config: SlotConfig) -> Self {
-        Self { slot_config }
+    pub fn new(slot_config: SlotConfig, include: &[String]) -> Self {
+        let include = include.iter().map(|s| WildMatch::new(s)).collect();
+        Self { slots: slot_config, include }
     }
 }
 
@@ -77,8 +80,12 @@ struct BackupEntry {
 }
 
 impl BackupEntry {
-    fn new(path: PathBuf) -> Option<Self> {
-        let m = RE.captures(path.file_name()?.to_str()?)?;
+    fn new(path: PathBuf, include: &[WildMatch]) -> Option<Self> {
+        let filename = path.file_name()?.to_str()?;
+        if !include.is_empty() && !include.iter().any(|w| w.matches(filename)) {
+            return None;
+        }
+        let m = RE.captures(filename)?;
         let year = m.name("year")?.as_str().parse().ok()?;
         let month = m.name("month")?.as_str().parse().ok()?;
         let day = m.name("day")?.as_str().parse().ok()?;
@@ -139,6 +146,8 @@ lazy_static! {
 )?").unwrap();
 }
 
+/// Plan for keeping/removing PathBuf with configured slots.
+/// PathBufs that are invalid strings aren't considered for either removal or keep
 pub struct Plan {
     pub to_keep: Vec<PathBuf>,
     pub to_remove: Vec<PathBuf>,
@@ -176,19 +185,19 @@ impl Display for Plan {
 
 
 impl Plan {
-    pub fn new<P: AsRef<Path>>(config: &SlotConfig, path: P) -> Result<Self, BackedUpError> {
+    pub fn new<P: AsRef<Path>>(config: &Config, path: P) -> Result<Self, BackedUpError> {
         let dir = read_dir(&path).map_err(|_| BackedUpError::ReadDirError { path: path.as_ref().to_path_buf() })?;
         let entries: Vec<_> = dir
             .flatten()
             .map(|x| x.path())
             .collect();
-        Ok(Self::from(config, &entries))
+        Ok(Self::from(&config, &entries))
     }
 
-    fn from(config: &SlotConfig, entries: &[PathBuf]) -> Self {
+    fn from(config: &Config, entries: &[PathBuf]) -> Self {
         let entries: BTreeSet<_> = entries
             .into_iter()
-            .filter_map(|x| BackupEntry::new(x.clone()))
+            .filter_map(|x| BackupEntry::new(x.clone(), &config.include))
             .collect();
         let mut year_slots = BTreeMap::new();
         let mut month_slots = BTreeMap::new();
@@ -209,7 +218,7 @@ impl Plan {
             slots
                 .into_iter()
                 .rev()
-                .take(config.get_slot_size(period))
+                .take(config.slots.get_slot_size(period))
                 .for_each(|&x|
                     {
                         period_map.entry(x.path.clone()).or_insert(Vec::new()).push(period);
@@ -233,7 +242,7 @@ impl Plan {
         }
     }
 
-    /// Executes plan and removes timestamped files not matching any slots
+    /// Execute plan and remove timestamped files not matching any slots
     pub fn execute(&self) -> Vec<io::Result<()>> {
         let mut result = Vec::new();
         for p in self.to_remove.iter() {
@@ -251,10 +260,11 @@ mod tests {
 
     use super::*;
 
-    fn create_test_data(mut start_dt: DateTime<Utc>, days: usize) -> Vec<PathBuf> {
+    fn create_test_data(mut start_dt: DateTime<Utc>, days: usize, extension: &str) -> Vec<PathBuf> {
         let mut result = Vec::new();
+        let fmt = format!("%Y-%m-%d{}", extension);
         for _ in 0..days {
-            let path = PathBuf::from(start_dt.format("%Y-%m-%d").to_string());
+            let path = PathBuf::from(start_dt.format(fmt.as_str()).to_string());
             result.push(path);
             start_dt = start_dt - Duration::days(1);
         }
@@ -263,22 +273,31 @@ mod tests {
 
     #[test]
     fn test_make_plan() {
-        let parsed_backups = create_test_data(Utc.ymd(2015, 1, 1)
-                                                  .and_hms(0, 0, 0), 400);
-        let mut config = SlotConfig {
+        let mut parsed_backups = create_test_data(Utc.ymd(2015, 1, 1)
+                                                      .and_hms(0, 0, 0), 400, "");
+
+        // no effect for number of matches until changing include
+        parsed_backups.append(&mut create_test_data(Utc.ymd(2015, 1, 1)
+                                                        .and_hms(0, 0, 0), 30, ".log"));
+        let slot_config = SlotConfig {
             years: 3,
             ..Default::default()
         };
+        let mut config = Config::new(slot_config, &vec![]);
 
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 3);
 
-        config.months = 13;
+        config.slots.months = 13;
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 14);
 
-        config.days = 30;
+        config.slots.days = 30;
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 43);
+
+        config.include = vec![WildMatch::new("*.log")];
+        let plan = Plan::from(&config, &parsed_backups);
+        assert_eq!(plan.to_keep.len(), 30);
     }
 }

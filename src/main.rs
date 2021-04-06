@@ -1,13 +1,18 @@
 use anyhow::Result;
 use argh::FromArgs;
 
-use backedup::{BackedUpError, Plan, SlotConfig};
+use backedup::{BackedUpError, Config, Plan, SlotConfig};
 
 #[derive(FromArgs)]
 ///Backedup
 struct ArgParser {
     #[argh(positional)]
     path: String,
+
+    ///filename pattern to look for, quote it to prevent shell expansion.
+    /// Can be provided several times
+    #[argh(option)]
+    include: Vec<String>,
 
     ///set number of backups for yearly slot
     #[argh(option, default = "0")]
@@ -36,11 +41,12 @@ struct ArgParser {
 }
 
 fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
-    let config = SlotConfig::new(parser.yearly,
-                                 parser.monthly,
-                                 parser.daily,
-                                 parser.hourly,
-                                 parser.minutely)?;
+    let slot_config = SlotConfig::new(parser.yearly,
+                                      parser.monthly,
+                                      parser.daily,
+                                      parser.hourly,
+                                      parser.minutely)?;
+    let config = Config::new(slot_config, &parser.include);
 
     Plan::new(&config, &parser.path)
 }

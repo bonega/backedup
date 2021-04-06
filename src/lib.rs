@@ -1,42 +1,92 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::{fmt, io};
-use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::read_dir;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
-use chrono::{Datelike, DateTime, TimeZone, Utc};
 use regex::Regex;
 use termion::{color, style};
 use termion::color::Fg;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum BackedUpError {
+    #[error("No such directory \"{path}\"")]
+    ReadDirError { path: PathBuf },
+    #[error("At least one slot must be configured")]
+    NoSlot,
+}
 
 #[derive(Default)]
 pub struct SlotConfig {
     pub years: usize,
     pub months: usize,
     pub days: usize,
+    pub hours: usize,
+    pub minutes: usize,
 }
 
 impl SlotConfig {
-    fn get_slot(&self, period: Period) -> usize {
+    pub fn new(years: usize, months: usize, days: usize, hours: usize, minutes: usize) -> Result<Self, BackedUpError> {
+        if years + months + days + hours + minutes == 0 {
+            return Err(BackedUpError::NoSlot);
+        }
+        Ok(Self {
+            years,
+            months,
+            days,
+            hours,
+            minutes,
+        })
+    }
+
+    fn get_slot_size(&self, period: Period) -> usize {
         match period {
             Period::Years => { self.years }
             Period::Months => { self.months }
             Period::Days => { self.days }
+            Period::Hours => { self.hours }
+            Period::Minutes => { self.minutes }
         }
     }
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Hash, Clone, Ord)]
+pub struct Config {
+    slot_config: SlotConfig,
+}
+
+impl Config {
+    fn new(slot_config: SlotConfig) -> Self {
+        Self { slot_config }
+    }
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Hash)]
 struct BackupEntry {
-    timestamp: DateTime<Utc>,
+    year: usize,
+    month: usize,
+    day: usize,
+    hour: usize,
+    minute: usize,
     path: PathBuf,
 }
 
-impl Eq for BackupEntry {}
+impl BackupEntry {
+    fn get_ordering_tuple(&self) -> (usize, usize, usize, usize, usize) {
+        (self.year, self.month, self.day, self.hour, self.minute)
+    }
+}
+
+impl Ord for BackupEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.get_ordering_tuple().cmp(&other.get_ordering_tuple())
+    }
+}
 
 
 #[derive(Copy, Clone, Debug)]
@@ -44,6 +94,8 @@ pub enum Period {
     Years,
     Months,
     Days,
+    Hours,
+    Minutes,
 }
 
 impl Period {
@@ -52,6 +104,8 @@ impl Period {
             Period::Years => { "Years" }
             Period::Months => { "Months" }
             Period::Days => { "Days" }
+            Period::Hours => { "Hours" }
+            Period::Minutes => { "Minutes" }
         }
     }
 }
@@ -76,13 +130,14 @@ pub struct Plan {
 
 impl Display for Plan {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}Plan{}", Fg(color::Blue), style::Reset)?;
+        writeln!(f, "Plan to:\n")?;
         if self.to_keep.is_empty() && self.to_remove.is_empty() {
             writeln!(f, "\tDo nothing: no valid timestamps")?;
             return Ok(());
         }
-        writeln!(f, "\t{}Keep files matching {}period(s)",
+        writeln!(f, "\t{}Keep {} file(s) matching {}period(s)",
                  Fg(color::Green),
+                 &self.to_keep.len(),
                  style::Reset)?;
         for i in &self.to_keep {
             write!(f, "\t\t{}{} {}",
@@ -94,7 +149,7 @@ impl Display for Plan {
             writeln!(f, "-> ({})", periods.join(","))?;
         }
         writeln!(f, "")?;
-        writeln!(f, "\t{}Remove files not matching periods", Fg(color::Red))?;
+        writeln!(f, "\t{}Remove {} file(s) not matching periods", Fg(color::Red), &self.to_remove.len())?;
         for i in &self.to_remove {
             writeln!(f, "\t\t{}", i.to_str().unwrap())?;
         }
@@ -104,8 +159,8 @@ impl Display for Plan {
 
 
 impl Plan {
-    pub fn new<P: AsRef<Path>>(config: &SlotConfig, path: P) -> io::Result<Self> {
-        let dir = read_dir(path)?;
+    pub fn new<P: AsRef<Path>>(config: &SlotConfig, path: P) -> Result<Self, BackedUpError> {
+        let dir = read_dir(&path).map_err(|_| BackedUpError::ReadDirError { path: path.as_ref().to_path_buf() })?;
         let entries: Vec<_> = dir
             .flatten()
             .filter_map(|x| BackupEntry::new(x.path()))
@@ -113,55 +168,44 @@ impl Plan {
         Ok(Self::from(config, &entries))
     }
 
-    fn from(config: &SlotConfig, entries: &Vec<BackupEntry>) -> Self {
-        fn insert_max<'a, K>(map: &mut HashMap<K, &'a BackupEntry>, k: K, v: &'a BackupEntry)
-            where K: Eq + Hash {
-            let entry = map.entry(k).or_insert(v);
-            if entry.timestamp > v.timestamp {
-                *entry = v;
-            }
+    fn from(config: &SlotConfig, entries: &[BackupEntry]) -> Self {
+        let entries: BTreeSet<_> = entries.into_iter().cloned().collect();
+        let mut year_slots = BTreeMap::new();
+        let mut month_slots = BTreeMap::new();
+        let mut day_slots = BTreeMap::new();
+        let mut hour_slots = BTreeMap::new();
+        let mut minute_slots = BTreeMap::new();
+        for entry in entries.iter().rev() {
+            year_slots.insert(entry.year, entry);
+            month_slots.insert((entry.year, entry.month), entry);
+            day_slots.insert((entry.year, entry.month, entry.day), entry);
+            hour_slots.insert((entry.year, entry.month, entry.day, entry.hour), entry);
+            minute_slots.insert((entry.year, entry.month, entry.day, entry.hour, entry.minute), entry);
         }
 
-        let mut year_slots = HashMap::new();
-        let mut month_slots = HashMap::new();
-        let mut day_slots = HashMap::new();
-        for entry in entries.iter() {
-            let dt = entry.timestamp;
-            insert_max(&mut year_slots, dt.year(), entry);
-            insert_max(&mut month_slots, (dt.year(), dt.month()), entry);
-            insert_max(&mut day_slots, (dt.year(), dt.month(), dt.day()), entry);
-        }
-        let parsed_set: HashSet<_> = entries.into_iter().map(|x| &x.path).collect();
-
-        let mut to_keep = Vec::new();
+        let mut to_keep = BTreeSet::new();
         let mut period_map = HashMap::new();
-        let mut keep_from_period = |mut slots: Vec<&&BackupEntry>, period| {
-            let n = config.get_slot(period);
-            slots.sort_by_key(|x| x.timestamp);
+        let mut keep_from_period = |slots: Vec<&&BackupEntry>, period| {
             slots
                 .into_iter()
                 .rev()
-                .take(n)
+                .take(config.get_slot_size(period))
                 .for_each(|&x|
                     {
                         period_map.entry(x.path.clone()).or_insert(Vec::new()).push(period);
-                        to_keep.push(x.clone());
+                        to_keep.insert(x.clone());
                     }
                 );
         };
-
         keep_from_period(year_slots.values().collect(), Period::Years);
         keep_from_period(month_slots.values().collect(), Period::Months);
         keep_from_period(day_slots.values().collect(), Period::Days);
-        to_keep.sort_by_key(|x| x.timestamp);
-        to_keep.dedup();
-        let entries_set: HashSet<_> = entries.iter().collect();
-        let to_keep_set: HashSet<_> = to_keep.iter().collect();
-        let mut to_remove: Vec<_> = entries_set.difference(&to_keep_set).collect();
-        to_remove.sort_by_key(|x| x.timestamp);
-        assert_eq!(parsed_set.len(), &to_keep.len() + &to_remove.len());
-        let to_remove: Vec<_> = to_remove.iter().map(|x| x.path.clone()).collect();
+        keep_from_period(hour_slots.values().collect(), Period::Hours);
+        keep_from_period(minute_slots.values().collect(), Period::Minutes);
+
+        let to_remove: Vec<_> = entries.difference(&to_keep).map(|x| x.path.clone()).collect();
         let to_keep: Vec<_> = to_keep.into_iter().map(|x| x.path).collect();
+        assert_eq!(entries.len(), &to_keep.len() + &to_remove.len());
         Self {
             to_keep,
             to_remove,
@@ -172,15 +216,30 @@ impl Plan {
 
 impl BackupEntry {
     fn new(path: PathBuf) -> Option<Self> {
-        let timestamp = datetime_from_regex(path.file_name()?.to_str()?, &RE)?;
-        Some(Self { timestamp, path })
+        let m = RE.captures(path.file_name()?.to_str()?)?;
+        let year = m.name("year")?.as_str().parse().ok()?;
+        let month = m.name("month")?.as_str().parse().ok()?;
+        let day = m.name("day")?.as_str().parse().ok()?;
+        let hour = m.name("hour").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
+        let minute = m.name("minute").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
+        let second = m.name("second").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
+        Some(Self {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            path,
+        })
+        // let timestamp = datetime_from_regex(path.file_name()?.to_str()?, &RE)?;
+        // Some(Self { timestamp, path })
     }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
+    use chrono::{DateTime, Duration, TimeZone, Utc};
 
     use super::*;
 
@@ -215,16 +274,4 @@ mod tests {
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 43);
     }
-}
-
-
-fn datetime_from_regex(s: &str, re: &Regex) -> Option<DateTime<Utc>> {
-    let m = re.captures(s)?;
-    let year = m.name("year")?.as_str().parse().ok()?;
-    let month = m.name("month")?.as_str().parse().ok()?;
-    let day = m.name("day")?.as_str().parse().ok()?;
-    let hour = m.name("hour").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-    let minute = m.name("minute").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-    let second = m.name("second").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-    Some(Utc.ymd(year, month, day).and_hms(hour, minute, second))
 }

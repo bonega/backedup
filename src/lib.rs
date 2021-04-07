@@ -16,7 +16,7 @@ use termion::color::Fg;
 use thiserror::Error;
 use wildmatch::WildMatch;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum BackedUpError {
     #[error("No such directory \"{path}\"")]
     ReadDirError { path: PathBuf },
@@ -293,10 +293,7 @@ mod tests {
         // no effect for number of matches until changing include
         parsed_backups.append(&mut create_test_data(fmt, Utc.ymd(2015, 1, 1)
             .and_hms(0, 0, 0), 30, ".log"));
-        let slot_config = SlotConfig {
-            years: 3,
-            ..Default::default()
-        };
+        let slot_config = SlotConfig::new(3, 0, 0, 0, 0).unwrap();
         let mut config = Config::new(slot_config, &vec![], None).unwrap();
 
         let plan = Plan::from(&config, &parsed_backups);
@@ -320,15 +317,16 @@ mod tests {
         let fmt = "%y%m%d";
         let parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1)
             .and_hms(0, 0, 0), 400, "");
-        let slot_config = SlotConfig {
-            years: 3,
-            months: 13,
-            days: 30,
-            ..Default::default()
-        };
+        let slot_config = SlotConfig::new(3, 13, 30, 0, 0).unwrap();
         let re_str = r"(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})";
         let config = Config::new(slot_config, &vec![], Some(re_str)).unwrap();
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 43);
+    }
+
+    #[test]
+    fn test_no_slot() {
+        let slot_config = SlotConfig::new(0, 0, 0, 0, 0);
+        assert_eq!(BackedUpError::NoSlot, slot_config.err().unwrap());
     }
 }

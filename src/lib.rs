@@ -22,6 +22,8 @@ pub enum BackedUpError {
     ReadDirError { path: PathBuf },
     #[error("At least one slot must be configured")]
     NoSlot,
+    #[error("Invalid regex")]
+    InvalidRegex,
 }
 
 #[derive(Default)]
@@ -61,12 +63,17 @@ impl SlotConfig {
 pub struct Config {
     slots: SlotConfig,
     include: Vec<WildMatch>,
+    re: Regex,
 }
 
 impl Config {
-    pub fn new(slot_config: SlotConfig, include: &[String]) -> Self {
+    pub fn new(slot_config: SlotConfig, include: &[String], re_str: Option<&str>) -> Result<Self, BackedUpError> {
         let include = include.iter().map(|s| WildMatch::new(s)).collect();
-        Self { slots: slot_config, include }
+        let re = match re_str {
+            None => { (*RE).clone() }
+            Some(s) => { Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)? }
+        };
+        Ok(Self { slots: slot_config, include, re })
     }
 }
 
@@ -81,12 +88,13 @@ struct BackupEntry {
 }
 
 impl BackupEntry {
-    fn new(path: PathBuf, include: &[WildMatch]) -> Option<Self> {
+    fn new(path: PathBuf, config: &Config) -> Option<Self> {
+        let include = &config.include;
         let filename = path.file_name()?.to_str()?;
         if !include.is_empty() && !include.iter().any(|w| w.matches(filename)) {
             return None;
         }
-        let m = RE.captures(filename)?;
+        let m = &config.re.captures(filename)?;
         let year = m.name("year")?.as_str().parse().ok()?;
         let month = m.name("month")?.as_str().parse().ok()?;
         let day = m.name("day")?.as_str().parse().ok()?;
@@ -198,7 +206,7 @@ impl Plan {
     fn from(config: &Config, entries: &[PathBuf]) -> Self {
         let entries: BTreeSet<_> = entries
             .into_iter()
-            .filter_map(|x| BackupEntry::new(x.clone(), &config.include))
+            .filter_map(|x| BackupEntry::new(x.clone(), config))
             .collect();
         let mut year_slots = BTreeMap::new();
         let mut month_slots = BTreeMap::new();
@@ -265,9 +273,9 @@ mod tests {
 
     use super::*;
 
-    fn create_test_data(mut start_dt: DateTime<Utc>, days: usize, extension: &str) -> Vec<PathBuf> {
+    fn create_test_data(fmt: &str, mut start_dt: DateTime<Utc>, days: usize, extension: &str) -> Vec<PathBuf> {
         let mut result = Vec::new();
-        let fmt = format!("%Y-%m-%d{}", extension);
+        let fmt = format!("{}{}", fmt, extension);
         for _ in 0..days {
             let path = PathBuf::from(start_dt.format(fmt.as_str()).to_string());
             result.push(path);
@@ -278,17 +286,18 @@ mod tests {
 
     #[test]
     fn test_make_plan() {
-        let mut parsed_backups = create_test_data(Utc.ymd(2015, 1, 1)
-                                                      .and_hms(0, 0, 0), 400, "");
+        let fmt = "%Y-%m-%d";
+        let mut parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1)
+            .and_hms(0, 0, 0), 400, "");
 
         // no effect for number of matches until changing include
-        parsed_backups.append(&mut create_test_data(Utc.ymd(2015, 1, 1)
-                                                        .and_hms(0, 0, 0), 30, ".log"));
+        parsed_backups.append(&mut create_test_data(fmt, Utc.ymd(2015, 1, 1)
+            .and_hms(0, 0, 0), 30, ".log"));
         let slot_config = SlotConfig {
             years: 3,
             ..Default::default()
         };
-        let mut config = Config::new(slot_config, &vec![]);
+        let mut config = Config::new(slot_config, &vec![], None).unwrap();
 
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 3);
@@ -304,5 +313,22 @@ mod tests {
         config.include = vec![WildMatch::new("*.log")];
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 30);
+    }
+
+    #[test]
+    fn test_custom_regex() {
+        let fmt = "%y%m%d";
+        let parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1)
+            .and_hms(0, 0, 0), 400, "");
+        let slot_config = SlotConfig {
+            years: 3,
+            months: 13,
+            days: 30,
+            ..Default::default()
+        };
+        let re_str = r"(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})";
+        let config = Config::new(slot_config, &vec![], Some(re_str)).unwrap();
+        let plan = Plan::from(&config, &parsed_backups);
+        assert_eq!(plan.to_keep.len(), 43);
     }
 }

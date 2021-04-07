@@ -41,6 +41,11 @@ struct ArgParser {
     #[argh(option, default = "0")]
     minutely: usize,
 
+    ///provide alternate regex for parsing timeslots. At least year, month and day must be provided and named
+    /// eg '(?P<year>\d{{2}})(?P<month>\d{{2}})(?P<day>\d{{2}})'
+    #[argh(option)]
+    regex: Option<String>,
+
     ///execute plan and remove timestamped files not matching a slot
     #[argh(switch)]
     execute: bool,
@@ -53,7 +58,8 @@ fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
                                       parser.daily,
                                       parser.hourly,
                                       parser.minutely)?;
-    let config = Config::new(slot_config, &parser.include);
+    let re_str = parser.regex.as_ref().map(|s| s.as_str());
+    let config = Config::new(slot_config, &parser.include, re_str)?;
 
     Plan::new(&config, &parser.path)
 }

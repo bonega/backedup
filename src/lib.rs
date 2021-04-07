@@ -1,14 +1,15 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::{fmt, io};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{read_dir, remove_file};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
+use log::{error, info};
 use regex::Regex;
 use termion::{color, style};
 use termion::color::Fg;
@@ -243,13 +244,17 @@ impl Plan {
     }
 
     /// Execute plan and remove timestamped files not matching any slots
-    pub fn execute(&self) -> Vec<io::Result<()>> {
-        let mut result = Vec::new();
-        for p in self.to_remove.iter() {
-            println!("Trying to remove file {}", p.to_str().unwrap_or("<Failed to render>"));
-            result.push(remove_file(p));
+    pub fn execute(&self) {
+        if self.to_remove.is_empty() {
+            info!("No file to remove")
         }
-        result
+        for p in self.to_remove.iter() {
+            let filename = p.to_str().unwrap();
+            match remove_file(p) {
+                Ok(_) => { info!("removed file {}", filename) }
+                Err(_) => { error!("error removing file {}", filename) }
+            }
+        }
     }
 }
 

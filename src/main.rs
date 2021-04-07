@@ -1,5 +1,7 @@
 use anyhow::Result;
 use argh::FromArgs;
+use env_logger::Env;
+use log::info;
 
 use backedup::{BackedUpError, Config, Plan, SlotConfig};
 
@@ -34,7 +36,7 @@ struct ArgParser {
     #[argh(option, default = "0")]
     minutely: usize,
 
-    ///execute plan and removes timestamped files not matching a slot
+    ///execute plan and remove timestamped files not matching a slot
     #[argh(switch)]
     execute: bool,
 
@@ -53,6 +55,7 @@ fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
 
 
 fn main() -> Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let parser = argh::from_env();
     let res = argparser_to_plan(&parser);
     if let Err(e) = &res {
@@ -63,7 +66,10 @@ fn main() -> Result<()> {
     let plan = res.unwrap();
 
     if parser.execute {
-        let _ = plan.execute();
+        if !plan.to_remove.is_empty() {
+            info!("Executing plan to remove {} and keep {} files", plan.to_remove.len(), plan.to_keep.len());
+        }
+        plan.execute();
     } else {
         println!("{}", plan);
     }

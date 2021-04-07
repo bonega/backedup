@@ -17,3 +17,7 @@ chrono = "0.4.19"
 wildmatch = "2.0.0"
 
 [dev-dependencies]
+
+[profile.release]
+lto = true
+codegen-units = 1

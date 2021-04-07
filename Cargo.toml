@@ -16,7 +16,11 @@ thiserror = "1.0.24"
 chrono = "0.4.19"
 wildmatch = "2.0.0"
 log = "0.4.14"
-env_logger = "0.8.3"
+slog = "2.7.0"
+slog-syslog = "0.12.0"
+slog-scope = "4.4.0"
+slog-stdlog = "4.1.0"
+slog-term = "2.8.0"
 
 [dev-dependencies]
 

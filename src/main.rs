@@ -1,7 +1,12 @@
+#[macro_use]
+extern crate log;
+#[macro_use(slog_o)]
+extern crate slog;
+
 use anyhow::Result;
 use argh::FromArgs;
-use env_logger::Env;
-use log::info;
+use slog::{Drain, Logger};
+use slog_syslog::Facility;
 
 use backedup::{BackedUpError, Config, Plan, SlotConfig};
 
@@ -53,9 +58,19 @@ fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
     Plan::new(&config, &parser.path)
 }
 
+fn init_logging() -> Logger {
+    let decorator = slog_term::TermDecorator::new().build();
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let d1 = std::sync::Mutex::new(drain).fuse();
+    let d2 = slog_syslog::unix_3164(Facility::LOG_USER).unwrap().fuse();
+    let drain = slog::Duplicate(d1, d2).fuse();
+    slog::Logger::root(drain, slog_o!())
+}
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    let logger = init_logging();
+    let _scope_guard = slog_scope::set_global_logger(logger);
+    let _log_guard = slog_stdlog::init().unwrap();
     let parser = argh::from_env();
     let res = argparser_to_plan(&parser);
     if let Err(e) = &res {

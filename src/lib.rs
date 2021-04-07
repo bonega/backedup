@@ -252,7 +252,7 @@ impl Plan {
             let filename = p.to_str().unwrap();
             match remove_file(p) {
                 Ok(_) => { info!("removed file {}", filename) }
-                Err(_) => { error!("error removing file {}", filename) }
+                Err(_) => { error!("failed to remove file {}", filename) }
             }
         }
     }

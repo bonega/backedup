@@ -67,7 +67,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(slot_config: SlotConfig, include: &[String], re_str: Option<&str>) -> Result<Self, BackedUpError> {
+    pub fn new(slot_config: SlotConfig, include: &[&str], re_str: Option<&str>) -> Result<Self, BackedUpError> {
         let include = include.iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
             None => { (*RE).clone() }

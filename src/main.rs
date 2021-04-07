@@ -58,25 +58,26 @@ fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
                                       parser.daily,
                                       parser.hourly,
                                       parser.minutely)?;
+    let include: Vec<_> = parser.include.iter().map(AsRef::as_ref).collect();
     let re_str = parser.regex.as_ref().map(|s| s.as_str());
-    let config = Config::new(slot_config, &parser.include, re_str)?;
+    let config = Config::new(slot_config, &include, re_str)?;
 
     Plan::new(&config, &parser.path)
 }
 
-fn init_logging() -> Logger {
+fn init_logging() -> Result<Logger> {
     let decorator = slog_term::TermDecorator::new().build();
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
     let d1 = std::sync::Mutex::new(drain).fuse();
-    let d2 = slog_syslog::unix_3164(Facility::LOG_USER).unwrap().fuse();
+    let d2 = slog_syslog::unix_3164(Facility::LOG_USER)?.fuse();
     let drain = slog::Duplicate(d1, d2).fuse();
-    slog::Logger::root(drain, slog_o!())
+    Ok(slog::Logger::root(drain, slog_o!()))
 }
 
 fn main() -> Result<()> {
-    let logger = init_logging();
+    let logger = init_logging()?;
     let _scope_guard = slog_scope::set_global_logger(logger);
-    let _log_guard = slog_stdlog::init().unwrap();
+    let _log_guard = slog_stdlog::init()?;
     let parser = argh::from_env();
     let res = argparser_to_plan(&parser);
     if let Err(e) = &res {
@@ -84,7 +85,7 @@ fn main() -> Result<()> {
         anyhow::bail!("Couldn't construct plan");
     }
 
-    let plan = res.unwrap();
+    let plan = res?;
 
     if parser.execute {
         if !plan.to_remove.is_empty() {

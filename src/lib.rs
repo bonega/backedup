@@ -24,9 +24,11 @@ pub enum BackedUpError {
     NoSlot,
     #[error("Invalid regex")]
     InvalidRegex,
+    #[error("Regex missing capture group for \"{name}\". -- example: (?P<{name}>\\d{{2}})")]
+    MissingCaptureGroup { name: String },
 }
 
-#[derive(Default)]
+#[derive(Copy, Clone)]
 pub struct SlotConfig {
     pub years: usize,
     pub months: usize,
@@ -73,6 +75,12 @@ impl Config {
             None => { (*RE).clone() }
             Some(s) => { Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)? }
         };
+        let capture_names: Vec<_> = re.capture_names().flatten().collect();
+        for i in ["year", "month", "day"].iter() {
+            if !capture_names.contains(i) {
+                return Err(BackedUpError::MissingCaptureGroup { name: i.to_string() });
+            }
+        }
         Ok(Self { slots: slot_config, include, re })
     }
 }
@@ -328,5 +336,22 @@ mod tests {
     fn test_no_slot() {
         let slot_config = SlotConfig::new(0, 0, 0, 0, 0);
         assert_eq!(BackedUpError::NoSlot, slot_config.err().unwrap());
+    }
+
+    #[test]
+    fn test_missing_named_group() {
+        let slot_config = SlotConfig::new(1, 0, 0, 0, 0).unwrap();
+        let re_str = r"(?P<month>\d{2})(?P<day>\d{2})";
+
+        let config = Config::new(slot_config, &vec![], Some(re_str));
+        assert_eq!(BackedUpError::MissingCaptureGroup { name: "year".to_string() }, config.err().unwrap());
+
+        let re_str = r"(?P<year>\d{2})(?P<day>\d{2})";
+        let config = Config::new(slot_config, &vec![], Some(re_str));
+        assert_eq!(BackedUpError::MissingCaptureGroup { name: "month".to_string() }, config.err().unwrap());
+
+        let re_str = r"(?P<year>\d{2})(?P<month>\d{2})";
+        let config = Config::new(slot_config, &vec![], Some(re_str));
+        assert_eq!(BackedUpError::MissingCaptureGroup { name: "day".to_string() }, config.err().unwrap());
     }
 }

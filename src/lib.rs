@@ -30,11 +30,11 @@ pub enum BackedUpError {
 
 #[derive(Copy, Clone)]
 pub struct SlotConfig {
-    pub years: usize,
-    pub months: usize,
-    pub days: usize,
-    pub hours: usize,
-    pub minutes: usize,
+    yearly: usize,
+    monthly: usize,
+    daily: usize,
+    hourly: usize,
+    minutely: usize,
 }
 
 impl SlotConfig {

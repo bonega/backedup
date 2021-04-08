@@ -43,28 +43,28 @@ impl SlotConfig {
             return Err(BackedUpError::NoSlot);
         }
         Ok(Self {
-            years,
-            months,
-            days,
-            hours,
-            minutes,
+            yearly: years,
+            monthly: months,
+            daily: days,
+            hourly: hours,
+            minutely: minutes,
         })
     }
 
     fn get_slot_size(&self, period: Period) -> usize {
         match period {
-            Period::Years => { self.years }
-            Period::Months => { self.months }
-            Period::Days => { self.days }
-            Period::Hours => { self.hours }
-            Period::Minutes => { self.minutes }
+            Period::Years => { self.yearly }
+            Period::Months => { self.monthly }
+            Period::Days => { self.daily }
+            Period::Hours => { self.hourly }
+            Period::Minutes => { self.minutely }
         }
     }
 }
 
 pub struct Config {
     slots: SlotConfig,
-    include: Vec<WildMatch>,
+    pattern: Vec<WildMatch>,
     re: Regex,
 }
 
@@ -81,7 +81,7 @@ impl Config {
                 return Err(BackedUpError::MissingCaptureGroup { name: i.to_string() });
             }
         }
-        Ok(Self { slots: slot_config, include, re })
+        Ok(Self { slots: slot_config, pattern: include, re })
     }
 }
 
@@ -97,9 +97,9 @@ struct BackupEntry {
 
 impl BackupEntry {
     fn new(path: PathBuf, config: &Config) -> Option<Self> {
-        let include = &config.include;
+        let pattern = &config.pattern;
         let filename = path.file_name()?.to_str()?;
-        if !include.is_empty() && !include.iter().any(|w| w.matches(filename)) {
+        if !pattern.is_empty() && !pattern.iter().any(|w| w.matches(filename)) {
             return None;
         }
         let m = &config.re.captures(filename)?;
@@ -307,15 +307,15 @@ mod tests {
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 3);
 
-        config.slots.months = 13;
+        config.slots.monthly = 13;
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 14);
 
-        config.slots.days = 30;
+        config.slots.daily = 30;
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 43);
 
-        config.include = vec![WildMatch::new("*.log")];
+        config.pattern = vec![WildMatch::new("*.log")];
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 30);
     }

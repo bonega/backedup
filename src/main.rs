@@ -16,10 +16,10 @@ struct ArgParser {
     #[argh(positional)]
     path: String,
 
-    ///filename pattern to look for, quote it to prevent shell expansion.
+    ///wildcard filename pattern to look for, quote it to prevent shell expansion.
     /// Can be provided several times
     #[argh(option)]
-    include: Vec<String>,
+    pattern: Vec<String>,
 
     ///set number of backups for yearly slot
     #[argh(option, default = "0")]
@@ -58,9 +58,9 @@ fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
                                       parser.daily,
                                       parser.hourly,
                                       parser.minutely)?;
-    let include: Vec<_> = parser.include.iter().map(AsRef::as_ref).collect();
+    let pattern: Vec<_> = parser.pattern.iter().map(AsRef::as_ref).collect();
     let re_str = parser.regex.as_ref().map(|s| s.as_str());
-    let config = Config::new(slot_config, &include, re_str)?;
+    let config = Config::new(slot_config, &pattern, re_str)?;
 
     Plan::new(&config, &parser.path)
 }

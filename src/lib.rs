@@ -69,8 +69,8 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(slot_config: SlotConfig, include: &[&str], re_str: Option<&str>) -> Result<Self, BackedUpError> {
-        let include = include.iter().map(|s| WildMatch::new(s)).collect();
+    pub fn new(slot_config: SlotConfig, pattern: &[&str], re_str: Option<&str>) -> Result<Self, BackedUpError> {
+        let pattern = pattern.iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
             None => { (*RE).clone() }
             Some(s) => { Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)? }
@@ -81,7 +81,7 @@ impl Config {
                 return Err(BackedUpError::MissingCaptureGroup { name: i.to_string() });
             }
         }
-        Ok(Self { slots: slot_config, pattern: include, re })
+        Ok(Self { slots: slot_config, pattern, re })
     }
 }
 
@@ -298,7 +298,7 @@ mod tests {
         let mut parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1)
             .and_hms(0, 0, 0), 400, "");
 
-        // no effect for number of matches until changing include
+        // no effect for number of matches until changing pattern
         parsed_backups.append(&mut create_test_data(fmt, Utc.ymd(2015, 1, 1)
             .and_hms(0, 0, 0), 30, ".log"));
         let slot_config = SlotConfig::new(3, 0, 0, 0, 0).unwrap();

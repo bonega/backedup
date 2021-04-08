@@ -86,17 +86,17 @@ impl Config {
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Hash)]
-struct BackupEntry {
+struct BackupEntry<'a> {
     year: u16,
     month: u8,
     day: u8,
     hour: u8,
     minute: u8,
-    path: PathBuf,
+    path: &'a Path,
 }
 
-impl BackupEntry {
-    fn new(path: PathBuf, config: &Config) -> Option<Self> {
+impl<'a> BackupEntry<'a> {
+    fn new(path: &'a Path, config: &Config) -> Option<Self> {
         let pattern = &config.pattern;
         let filename = path.file_name()?.to_str()?;
         if !pattern.is_empty() && !pattern.iter().any(|w| w.matches(filename)) {
@@ -123,7 +123,7 @@ impl BackupEntry {
     }
 }
 
-impl Ord for BackupEntry {
+impl<'a> Ord for BackupEntry<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.get_ordering_tuple().cmp(&other.get_ordering_tuple())
     }
@@ -214,7 +214,7 @@ impl Plan {
     fn from(config: &Config, entries: &[PathBuf]) -> Self {
         let entries: BTreeSet<_> = entries
             .into_iter()
-            .filter_map(|x| BackupEntry::new(x.clone(), config))
+            .filter_map(|x| BackupEntry::new(x, config))
             .collect();
         let mut year_slots = BTreeMap::new();
         let mut month_slots = BTreeMap::new();
@@ -230,27 +230,33 @@ impl Plan {
         }
 
         let mut to_keep = BTreeSet::new();
-        let mut period_map = HashMap::new();
-        let mut keep_from_period = |slots: Vec<&&BackupEntry>, period| {
-            slots
-                .into_iter()
-                .rev()
-                .take(config.slots.get_slot_size(period))
-                .for_each(|&x|
-                    {
-                        period_map.entry(x.path.clone()).or_insert(Vec::new()).push(period);
-                        to_keep.insert(x.clone());
-                    }
-                );
-        };
-        keep_from_period(year_slots.values().collect(), Period::Years);
-        keep_from_period(month_slots.values().collect(), Period::Months);
-        keep_from_period(day_slots.values().collect(), Period::Days);
-        keep_from_period(hour_slots.values().collect(), Period::Hours);
-        keep_from_period(minute_slots.values().collect(), Period::Minutes);
+        let mut period_map: HashMap<PathBuf, Vec<Period>> = HashMap::new();
+        let SlotConfig { yearly, monthly, daily, hourly, minutely } = config.slots;
+        for (_, entry) in year_slots.into_iter().rev().take(yearly) {
+            to_keep.insert(entry.clone());
+            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Years);
+        }
+        for (_, entry) in month_slots.into_iter().rev().take(monthly) {
+            to_keep.insert(entry.clone());
+            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Months);
+        }
+        for (_, entry) in day_slots.into_iter().rev().take(daily) {
+            to_keep.insert(entry.clone());
+            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Days);
+        }
+        for (_, entry) in hour_slots.into_iter().rev().take(hourly) {
+            to_keep.insert(entry.clone());
+            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Hours);
+        }
+        for (_, entry) in minute_slots.into_iter().rev().take(minutely) {
+            to_keep.insert(entry.clone());
+            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Minutes);
+        }
 
-        let to_remove: Vec<_> = entries.difference(&to_keep).map(|x| x.path.clone()).collect();
-        let to_keep: Vec<_> = to_keep.into_iter().map(|x| x.path).collect();
+        let to_remove: Vec<_> = entries.difference(&to_keep)
+            .map(|x| x.path.to_path_buf())
+            .collect();
+        let to_keep: Vec<_> = to_keep.into_iter().map(|x| x.path.to_path_buf()).collect();
         assert_eq!(entries.len(), &to_keep.len() + &to_remove.len());
         Self {
             to_keep,

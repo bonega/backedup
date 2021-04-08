@@ -50,16 +50,6 @@ impl SlotConfig {
             minutely: minutes,
         })
     }
-
-    fn get_slot_size(&self, period: Period) -> usize {
-        match period {
-            Period::Years => { self.yearly }
-            Period::Months => { self.monthly }
-            Period::Days => { self.daily }
-            Period::Hours => { self.hourly }
-            Period::Minutes => { self.minutely }
-        }
-    }
 }
 
 pub struct Config {

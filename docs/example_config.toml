@@ -1,0 +1,17 @@
+# All fields are optional
+
+# Only look at files ending with ".log"
+# Check https://github.com/becheran/wildmatch for exact behavior
+#pattern = ['*.log']
+
+# Use a custom regex for parsing
+#regex = '(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})'
+
+# Set number of files in every slot
+# At least one must be non-zero
+[slots]
+yearly = 20 # One file per year for 20 years
+monthly = 12 # One file per month for 12 months
+daily = 30 # One file per day for 30 days
+#hourly = 24 # One file per hour for 24 hour
+#minutely = 60 # one file per minute for 60 minutes

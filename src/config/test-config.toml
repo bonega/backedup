@@ -1,0 +1,8 @@
+pattern = ['*.log']
+regex = '(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})'
+[slots]
+yearly = 20
+monthly = 12
+daily = 30
+hourly = 24
+minutely = 60

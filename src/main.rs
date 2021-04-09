@@ -4,67 +4,12 @@ extern crate log;
 extern crate slog;
 
 use anyhow::Result;
-use argh::FromArgs;
 use slog::{Drain, Logger};
 use slog_syslog::Facility;
 
-use backedup::{BackedUpError, Config, Plan, SlotConfig};
+use config::ArgParser;
 
-#[derive(FromArgs)]
-///Backedup
-struct ArgParser {
-    #[argh(positional)]
-    path: String,
-
-    ///wildcard filename pattern to look for, quote it to prevent shell expansion.
-    /// Can be provided several times
-    #[argh(option)]
-    pattern: Vec<String>,
-
-    ///set number of backups for yearly slot
-    #[argh(option, default = "0")]
-    yearly: usize,
-
-    ///set number of backups for monthly slot
-    #[argh(option, default = "0")]
-    monthly: usize,
-
-    ///set number of backups for daily slot
-    #[argh(option, default = "0")]
-    daily: usize,
-
-    ///set number of backups for hourly slot
-    #[argh(option, default = "0")]
-    hourly: usize,
-
-    ///set number of backups for minutely slot
-    #[argh(option, default = "0")]
-    minutely: usize,
-
-    ///provide alternate regex for parsing timeslots. At least year, month and day must be provided and named
-    /// eg '(?P<year>\d{{2}})(?P<month>\d{{2}})(?P<day>\d{{2}})'
-    #[argh(option)]
-    regex: Option<String>,
-
-    ///execute plan and remove timestamped files not matching a slot
-    #[argh(switch)]
-    execute: bool,
-}
-
-fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
-    let slot_config = SlotConfig::new(
-        parser.yearly,
-        parser.monthly,
-        parser.daily,
-        parser.hourly,
-        parser.minutely,
-    )?;
-    let pattern: Vec<_> = parser.pattern.iter().map(AsRef::as_ref).collect();
-    let re_str = parser.regex.as_ref().map(|s| s.as_str());
-    let config = Config::new(slot_config, &pattern, re_str)?;
-
-    Plan::new(&config, &parser.path)
-}
+mod config;
 
 fn init_logging() -> Result<Logger> {
     let decorator = slog_term::TermDecorator::new().build();
@@ -79,14 +24,9 @@ fn main() -> Result<()> {
     let logger = init_logging()?;
     let _scope_guard = slog_scope::set_global_logger(logger);
     let _log_guard = slog_stdlog::init()?;
-    let parser = argh::from_env();
-    let res = argparser_to_plan(&parser);
-    if let Err(e) = &res {
-        eprintln!("{}", e);
-        anyhow::bail!("Couldn't construct plan");
-    }
+    let parser = ArgParser::new();
 
-    let plan = res?;
+    let plan = parser.to_plan()?;
 
     if parser.execute {
         if !plan.to_remove.is_empty() {

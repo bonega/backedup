@@ -67,10 +67,10 @@ pub struct Config {
 impl Config {
     pub fn new(
         slot_config: SlotConfig,
-        pattern: &[&str],
+        pattern: &[String],
         re_str: Option<&str>,
     ) -> Result<Self, BackedUpError> {
-        let pattern = pattern.iter().map(|s| WildMatch::new(s)).collect();
+        let pattern = pattern.into_iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
             None => (*RE).clone(),
             Some(s) => Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)?,
@@ -347,7 +347,7 @@ mod tests {
         let mut result = Vec::new();
         let fmt = format!("{}{}", fmt, extension);
         for _ in 0..days {
-            let path = PathBuf::from(start_dt.format(fmt.as_str()).to_string());
+            let path = PathBuf::from(start_dt.format(&fmt).to_string());
             result.push(path);
             start_dt = start_dt - Duration::days(1);
         }

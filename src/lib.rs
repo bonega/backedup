@@ -38,7 +38,13 @@ pub struct SlotConfig {
 }
 
 impl SlotConfig {
-    pub fn new(years: usize, months: usize, days: usize, hours: usize, minutes: usize) -> Result<Self, BackedUpError> {
+    pub fn new(
+        years: usize,
+        months: usize,
+        days: usize,
+        hours: usize,
+        minutes: usize,
+    ) -> Result<Self, BackedUpError> {
         if years + months + days + hours + minutes == 0 {
             return Err(BackedUpError::NoSlot);
         }
@@ -59,19 +65,29 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(slot_config: SlotConfig, pattern: &[&str], re_str: Option<&str>) -> Result<Self, BackedUpError> {
+    pub fn new(
+        slot_config: SlotConfig,
+        pattern: &[&str],
+        re_str: Option<&str>,
+    ) -> Result<Self, BackedUpError> {
         let pattern = pattern.iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
-            None => { (*RE).clone() }
-            Some(s) => { Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)? }
+            None => (*RE).clone(),
+            Some(s) => Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)?,
         };
         let capture_names: Vec<_> = re.capture_names().flatten().collect();
         for i in ["year", "month", "day"].iter() {
             if !capture_names.contains(i) {
-                return Err(BackedUpError::MissingCaptureGroup { name: i.to_string() });
+                return Err(BackedUpError::MissingCaptureGroup {
+                    name: i.to_string(),
+                });
             }
         }
-        Ok(Self { slots: slot_config, pattern, re })
+        Ok(Self {
+            slots: slot_config,
+            pattern,
+            re,
+        })
     }
 }
 
@@ -96,8 +112,14 @@ impl<'a> BackupEntry<'a> {
         let year = m.name("year")?.as_str().parse().ok()?;
         let month = m.name("month")?.as_str().parse().ok()?;
         let day = m.name("day")?.as_str().parse().ok()?;
-        let hour = m.name("hour").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
-        let minute = m.name("minute").and_then(|s| s.as_str().parse().ok()).unwrap_or(0);
+        let hour = m
+            .name("hour")
+            .and_then(|s| s.as_str().parse().ok())
+            .unwrap_or(0);
+        let minute = m
+            .name("minute")
+            .and_then(|s| s.as_str().parse().ok())
+            .unwrap_or(0);
         Some(Self {
             year,
             month,
@@ -119,7 +141,6 @@ impl<'a> Ord for BackupEntry<'a> {
     }
 }
 
-
 #[derive(Copy, Clone, Debug)]
 pub enum Period {
     Years,
@@ -132,17 +153,18 @@ pub enum Period {
 impl Period {
     fn to_string(&self) -> &'static str {
         match self {
-            Period::Years => { "Years" }
-            Period::Months => { "Months" }
-            Period::Days => { "Days" }
-            Period::Hours => { "Hours" }
-            Period::Minutes => { "Minutes" }
+            Period::Years => "Years",
+            Period::Months => "Months",
+            Period::Days => "Days",
+            Period::Hours => "Hours",
+            Period::Minutes => "Minutes",
         }
     }
 }
 
 lazy_static! {
-    static ref RE: Regex =  Regex::new(r"(?x)(?P<year>\d{4}) \D?
+    static ref RE: Regex = Regex::new(
+        r"(?x)(?P<year>\d{4}) \D?
 (?P<month>\d{2}) \D?
 (?P<day>\d{2}) \D?
 (
@@ -150,7 +172,9 @@ lazy_static! {
    (?P<hour>\d{2}) \D?
    (?P<minute>\d{2}) \D?
    (?P<second>\d{2})?
-)?").unwrap();
+)?"
+    )
+    .unwrap();
 }
 
 /// Plan for keeping/removing PathBuf with configured slots.
@@ -168,21 +192,32 @@ impl Display for Plan {
             writeln!(f, "\tDo nothing: no valid timestamps")?;
             return Ok(());
         }
-        writeln!(f, "\t{}Keep {} file(s) matching {}period(s)",
-                 Fg(color::Green),
-                 &self.to_keep.len(),
-                 style::Reset)?;
+        writeln!(
+            f,
+            "\t{}Keep {} file(s) matching {}period(s)",
+            Fg(color::Green),
+            &self.to_keep.len(),
+            style::Reset
+        )?;
         for i in &self.to_keep {
-            write!(f, "\t\t{}{} {}",
-                   Fg(color::Green),
-                   i.to_str().unwrap(),
-                   style::Reset)?;
+            write!(
+                f,
+                "\t\t{}{} {}",
+                Fg(color::Green),
+                i.to_str().unwrap(),
+                style::Reset
+            )?;
             let periods = self.period_map.get(i).unwrap();
             let periods: Vec<_> = periods.iter().map(|x| x.to_string()).collect();
             writeln!(f, "-> ({})", periods.join(","))?;
         }
         writeln!(f, "")?;
-        writeln!(f, "\t{}Remove {} file(s) not matching periods", Fg(color::Red), &self.to_remove.len())?;
+        writeln!(
+            f,
+            "\t{}Remove {} file(s) not matching periods",
+            Fg(color::Red),
+            &self.to_remove.len()
+        )?;
         for i in &self.to_remove {
             writeln!(f, "\t\t{}", i.to_str().unwrap())?;
         }
@@ -190,14 +225,12 @@ impl Display for Plan {
     }
 }
 
-
 impl Plan {
     pub fn new<P: AsRef<Path>>(config: &Config, path: P) -> Result<Self, BackedUpError> {
-        let dir = read_dir(&path).map_err(|_| BackedUpError::ReadDirError { path: path.as_ref().to_path_buf() })?;
-        let entries: Vec<_> = dir
-            .flatten()
-            .map(|x| x.path())
-            .collect();
+        let dir = read_dir(&path).map_err(|_| BackedUpError::ReadDirError {
+            path: path.as_ref().to_path_buf(),
+        })?;
+        let entries: Vec<_> = dir.flatten().map(|x| x.path()).collect();
         Ok(Self::from(&config, &entries))
     }
 
@@ -216,34 +249,59 @@ impl Plan {
             month_slots.insert((entry.year, entry.month), entry);
             day_slots.insert((entry.year, entry.month, entry.day), entry);
             hour_slots.insert((entry.year, entry.month, entry.day, entry.hour), entry);
-            minute_slots.insert((entry.year, entry.month, entry.day, entry.hour, entry.minute), entry);
+            minute_slots.insert(
+                (entry.year, entry.month, entry.day, entry.hour, entry.minute),
+                entry,
+            );
         }
 
         let mut to_keep = BTreeSet::new();
         let mut period_map: HashMap<PathBuf, Vec<Period>> = HashMap::new();
-        let SlotConfig { yearly, monthly, daily, hourly, minutely } = config.slots;
+        let SlotConfig {
+            yearly,
+            monthly,
+            daily,
+            hourly,
+            minutely,
+        } = config.slots;
         for (_, entry) in year_slots.into_iter().rev().take(yearly) {
             to_keep.insert(entry.clone());
-            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Years);
+            period_map
+                .entry(entry.path.to_path_buf())
+                .or_default()
+                .push(Period::Years);
         }
         for (_, entry) in month_slots.into_iter().rev().take(monthly) {
             to_keep.insert(entry.clone());
-            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Months);
+            period_map
+                .entry(entry.path.to_path_buf())
+                .or_default()
+                .push(Period::Months);
         }
         for (_, entry) in day_slots.into_iter().rev().take(daily) {
             to_keep.insert(entry.clone());
-            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Days);
+            period_map
+                .entry(entry.path.to_path_buf())
+                .or_default()
+                .push(Period::Days);
         }
         for (_, entry) in hour_slots.into_iter().rev().take(hourly) {
             to_keep.insert(entry.clone());
-            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Hours);
+            period_map
+                .entry(entry.path.to_path_buf())
+                .or_default()
+                .push(Period::Hours);
         }
         for (_, entry) in minute_slots.into_iter().rev().take(minutely) {
             to_keep.insert(entry.clone());
-            period_map.entry(entry.path.to_path_buf()).or_default().push(Period::Minutes);
+            period_map
+                .entry(entry.path.to_path_buf())
+                .or_default()
+                .push(Period::Minutes);
         }
 
-        let to_remove: Vec<_> = entries.difference(&to_keep)
+        let to_remove: Vec<_> = entries
+            .difference(&to_keep)
             .map(|x| x.path.to_path_buf())
             .collect();
         let to_keep: Vec<_> = to_keep.into_iter().map(|x| x.path.to_path_buf()).collect();
@@ -263,13 +321,16 @@ impl Plan {
         for p in self.to_remove.iter() {
             let filename = p.to_str().unwrap();
             match remove_file(p) {
-                Ok(_) => { info!("removed file {}", filename) }
-                Err(_) => { error!("failed to remove file {}", filename) }
+                Ok(_) => {
+                    info!("removed file {}", filename)
+                }
+                Err(_) => {
+                    error!("failed to remove file {}", filename)
+                }
             }
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -277,7 +338,12 @@ mod tests {
 
     use super::*;
 
-    fn create_test_data(fmt: &str, mut start_dt: DateTime<Utc>, days: usize, extension: &str) -> Vec<PathBuf> {
+    fn create_test_data(
+        fmt: &str,
+        mut start_dt: DateTime<Utc>,
+        days: usize,
+        extension: &str,
+    ) -> Vec<PathBuf> {
         let mut result = Vec::new();
         let fmt = format!("{}{}", fmt, extension);
         for _ in 0..days {
@@ -291,12 +357,16 @@ mod tests {
     #[test]
     fn test_make_plan() {
         let fmt = "%Y-%m-%d";
-        let mut parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1)
-            .and_hms(0, 0, 0), 400, "");
+        let mut parsed_backups =
+            create_test_data(fmt, Utc.ymd(2015, 1, 1).and_hms(0, 0, 0), 400, "");
 
         // no effect for number of matches until changing pattern
-        parsed_backups.append(&mut create_test_data(fmt, Utc.ymd(2015, 1, 1)
-            .and_hms(0, 0, 0), 30, ".log"));
+        parsed_backups.append(&mut create_test_data(
+            fmt,
+            Utc.ymd(2015, 1, 1).and_hms(0, 0, 0),
+            30,
+            ".log",
+        ));
         let slot_config = SlotConfig::new(3, 0, 0, 0, 0).unwrap();
         let mut config = Config::new(slot_config, &vec![], None).unwrap();
 
@@ -319,8 +389,7 @@ mod tests {
     #[test]
     fn test_custom_regex() {
         let fmt = "%y%m%d";
-        let parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1)
-            .and_hms(0, 0, 0), 400, "");
+        let parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1).and_hms(0, 0, 0), 400, "");
         let slot_config = SlotConfig::new(3, 13, 30, 0, 0).unwrap();
         let re_str = r"(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})";
         let config = Config::new(slot_config, &vec![], Some(re_str)).unwrap();
@@ -340,14 +409,29 @@ mod tests {
         let re_str = r"(?P<month>\d{2})(?P<day>\d{2})";
 
         let config = Config::new(slot_config, &vec![], Some(re_str));
-        assert_eq!(BackedUpError::MissingCaptureGroup { name: "year".to_string() }, config.err().unwrap());
+        assert_eq!(
+            BackedUpError::MissingCaptureGroup {
+                name: "year".to_string()
+            },
+            config.err().unwrap()
+        );
 
         let re_str = r"(?P<year>\d{2})(?P<day>\d{2})";
         let config = Config::new(slot_config, &vec![], Some(re_str));
-        assert_eq!(BackedUpError::MissingCaptureGroup { name: "month".to_string() }, config.err().unwrap());
+        assert_eq!(
+            BackedUpError::MissingCaptureGroup {
+                name: "month".to_string()
+            },
+            config.err().unwrap()
+        );
 
         let re_str = r"(?P<year>\d{2})(?P<month>\d{2})";
         let config = Config::new(slot_config, &vec![], Some(re_str));
-        assert_eq!(BackedUpError::MissingCaptureGroup { name: "day".to_string() }, config.err().unwrap());
+        assert_eq!(
+            BackedUpError::MissingCaptureGroup {
+                name: "day".to_string()
+            },
+            config.err().unwrap()
+        );
     }
 }

@@ -49,15 +49,16 @@ struct ArgParser {
     ///execute plan and remove timestamped files not matching a slot
     #[argh(switch)]
     execute: bool,
-
 }
 
 fn argparser_to_plan(parser: &ArgParser) -> Result<Plan, BackedUpError> {
-    let slot_config = SlotConfig::new(parser.yearly,
-                                      parser.monthly,
-                                      parser.daily,
-                                      parser.hourly,
-                                      parser.minutely)?;
+    let slot_config = SlotConfig::new(
+        parser.yearly,
+        parser.monthly,
+        parser.daily,
+        parser.hourly,
+        parser.minutely,
+    )?;
     let pattern: Vec<_> = parser.pattern.iter().map(AsRef::as_ref).collect();
     let re_str = parser.regex.as_ref().map(|s| s.as_str());
     let config = Config::new(slot_config, &pattern, re_str)?;
@@ -89,7 +90,11 @@ fn main() -> Result<()> {
 
     if parser.execute {
         if !plan.to_remove.is_empty() {
-            info!("Executing plan to remove {} and keep {} files", plan.to_remove.len(), plan.to_keep.len());
+            info!(
+                "Executing plan to remove {} and keep {} files",
+                plan.to_remove.len(),
+                plan.to_keep.len()
+            );
         }
         plan.execute();
     } else {

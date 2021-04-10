@@ -65,6 +65,11 @@ pub struct Config {
 }
 
 impl Config {
+    /// [String] pattern(s) will filter entries with wildcard expressions - see [WildMatch] for details
+    /// An empty [Vec] implies no filter
+    ///
+    /// An optional regex [String] can be provided for parsing into timeslots.
+    /// At least `year`, `month` and `day` must be provided as named groups
     pub fn new(
         slot_config: SlotConfig,
         pattern: &[String],
@@ -177,8 +182,9 @@ lazy_static! {
     .unwrap();
 }
 
-/// Plan for keeping/removing PathBuf with configured slots.
-/// PathBufs that are invalid strings aren't considered for either removal or keep
+/// Plan for keeping/removing [`PathBuf`] with configured slots.
+///
+/// [`PathBuf`] that are invalid strings aren't considered for either retention or deletion.
 pub struct Plan {
     pub to_keep: Vec<PathBuf>,
     pub to_remove: Vec<PathBuf>,

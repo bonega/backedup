@@ -14,32 +14,32 @@ pub struct ArgParser {
     path: String,
 
     ///config file
-    #[argh(option)]
+    #[argh(option, short = 'c')]
     config: Option<String>,
 
     ///wildcard filename pattern to look for, quote it to prevent shell expansion.
     /// Can be provided several times
-    #[argh(option)]
+    #[argh(option, short = 'p')]
     pattern: Vec<String>,
 
     ///set number of backups for yearly slot
-    #[argh(option, default = "0")]
+    #[argh(option, default = "0", short = 'y')]
     yearly: usize,
 
     ///set number of backups for monthly slot
-    #[argh(option, default = "0")]
+    #[argh(option, default = "0", short = 'm')]
     monthly: usize,
 
     ///set number of backups for daily slot
-    #[argh(option, default = "0")]
+    #[argh(option, default = "0", short = 'd')]
     daily: usize,
 
     ///set number of backups for hourly slot
-    #[argh(option, default = "0")]
+    #[argh(option, default = "0", short = 'h')]
     hourly: usize,
 
     ///set number of backups for minutely slot
-    #[argh(option, default = "0")]
+    #[argh(option, default = "0", short = 'M')]
     minutely: usize,
 
     ///provide alternate regex for parsing timeslots. At least year, month and day must be provided and named

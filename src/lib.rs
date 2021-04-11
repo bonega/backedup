@@ -345,8 +345,8 @@ impl Plan {
                 Ok(_) => {
                     info!("removed file {}", filename)
                 }
-                Err(_) => {
-                    error!("failed to remove file {}", filename)
+                Err(e) => {
+                    error!("failed to remove file \"{}\": {}", filename, e)
                 }
             }
         }

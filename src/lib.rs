@@ -38,7 +38,7 @@ pub enum BackedUpError {
     #[error("At least one slot must be configured")]
     NoSlot,
     #[error("Invalid regex")]
-    InvalidRegex,
+    InvalidRegex(#[from] regex::Error),
     #[error("Regex missing capture group for \"{name}\". -- example: (?P<{name}>\\d{{2}})")]
     MissingCaptureGroup { name: String },
 }
@@ -93,7 +93,7 @@ impl Config {
         let pattern = pattern.into_iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
             None => (*RE).clone(),
-            Some(s) => Regex::new(s).map_err(|_| BackedUpError::InvalidRegex)?,
+            Some(s) => Regex::new(s).map_err(|e| BackedUpError::InvalidRegex(e))?,
         };
         let capture_names: Vec<_> = re.capture_names().flatten().collect();
         for i in ["year", "month", "day"].iter() {
@@ -456,6 +456,17 @@ mod tests {
             },
             config.err().unwrap()
         );
+    }
+
+    #[test]
+    fn test_invalid_regex() {
+        let re_str = r"/(notaregex";
+        let slot_config = SlotConfig::new(1, 0, 0, 0, 0).unwrap();
+        let config = Config::new(slot_config, &vec![], Some(re_str));
+        assert!(matches!(
+            config.err().unwrap(),
+            BackedUpError::InvalidRegex(_)
+        ))
     }
 
     #[cfg(target_family = "unix")]

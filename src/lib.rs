@@ -1,9 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+use std::{fmt, io};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::{read_dir, remove_file};
 use std::hash::Hash;
@@ -16,10 +16,25 @@ use termion::color::Fg;
 use thiserror::Error;
 use wildmatch::WildMatch;
 
+#[derive(Debug, Error)]
+pub struct IoError(io::Error);
+
+impl Display for IoError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq for IoError {
+    fn eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 #[derive(Error, Debug, PartialEq)]
 pub enum BackedUpError {
-    #[error("No such directory \"{path}\"")]
-    ReadDirError { path: PathBuf },
+    #[error("Couldn't open directory {path}")]
+    ReadDirError { source: IoError, path: PathBuf },
     #[error("At least one slot must be configured")]
     NoSlot,
     #[error("Invalid regex")]
@@ -232,7 +247,8 @@ impl Display for Plan {
 
 impl Plan {
     pub fn new<P: AsRef<Path>>(config: &Config, path: P) -> Result<Self, BackedUpError> {
-        let dir = read_dir(&path).map_err(|_| BackedUpError::ReadDirError {
+        let dir = read_dir(&path).map_err(|e| BackedUpError::ReadDirError {
+            source: IoError(e),
             path: path.as_ref().to_path_buf(),
         })?;
         let entries: Vec<_> = dir.flatten().map(|x| x.path()).collect();

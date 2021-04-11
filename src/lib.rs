@@ -107,13 +107,12 @@ struct BackupEntry<'a> {
 }
 
 impl<'a> BackupEntry<'a> {
-    fn new(path: &'a Path, config: &Config) -> Option<Self> {
-        let pattern = &config.pattern;
+    fn new(path: &'a Path, pattern: &[WildMatch], re: &Regex) -> Option<Self> {
         let filename = path.file_name()?.to_str()?;
         if !pattern.is_empty() && !pattern.iter().any(|w| w.matches(filename)) {
             return None;
         }
-        let m = &config.re.captures(filename)?;
+        let m = re.captures(filename)?;
         let year = m.name("year")?.as_str().parse().ok()?;
         let month = m.name("month")?.as_str().parse().ok()?;
         let day = m.name("day")?.as_str().parse().ok()?;
@@ -243,7 +242,7 @@ impl Plan {
     fn from(config: &Config, entries: &[PathBuf]) -> Self {
         let entries: BTreeSet<_> = entries
             .into_iter()
-            .filter_map(|x| BackupEntry::new(x, config))
+            .filter_map(|x| BackupEntry::new(x, &config.pattern, &config.re))
             .collect();
         let mut year_slots = BTreeMap::new();
         let mut month_slots = BTreeMap::new();
@@ -340,6 +339,8 @@ impl Plan {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use chrono::{DateTime, Duration, TimeZone, Utc};
 
     use super::*;
@@ -439,5 +440,15 @@ mod tests {
             },
             config.err().unwrap()
         );
+    }
+
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn test_invalid_utf_entry() {
+        use std::os::unix::ffi::OsStringExt;
+        let invalid_utf = b"2021-04-11\xe7";
+        let path = PathBuf::from(OsString::from_vec(invalid_utf.to_vec()));
+        let entry = BackupEntry::new(&path, &vec![], &RE);
+        assert_eq!(entry, None);
     }
 }

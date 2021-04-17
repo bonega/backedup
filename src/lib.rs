@@ -95,7 +95,7 @@ impl Config {
         let pattern = pattern.into_iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
             None => (*RE).clone(),
-            Some(s) => Regex::new(s).map_err(|e| BackedUpError::InvalidRegex(e))?,
+            Some(s) => Regex::new(s)?
         };
         let capture_names: Vec<_> = re.capture_names().flatten().collect();
         for i in ["year", "month", "day"].iter() {

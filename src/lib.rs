@@ -35,6 +35,8 @@ impl PartialEq for IoError {
 pub enum BackedUpError {
     #[error("Couldn't open directory {path}")]
     ReadDirError { source: IoError, path: PathBuf },
+    #[error("No write permission for path {0}")]
+    PathPermissionError(PathBuf),
     #[error("At least one slot must be configured")]
     NoSlot,
     #[error("Invalid regex")]
@@ -203,6 +205,8 @@ pub struct Plan {
     pub to_keep: Vec<PathBuf>,
     pub to_remove: Vec<PathBuf>,
     period_map: HashMap<PathBuf, Vec<Period>>,
+    //Original path, used for error reporting if available
+    path: Option<PathBuf>,
 }
 
 impl Display for Plan {
@@ -252,7 +256,9 @@ impl Plan {
             path: path.as_ref().to_path_buf(),
         })?;
         let entries: Vec<_> = dir.flatten().map(|x| x.path()).collect();
-        Ok(Self::from(&config, &entries))
+        let mut plan = Self::from(&config, &entries);
+        plan.path = Some(path.as_ref().to_path_buf());
+        Ok(plan)
     }
 
     fn from(config: &Config, entries: &[PathBuf]) -> Self {
@@ -331,14 +337,33 @@ impl Plan {
             to_keep,
             to_remove,
             period_map,
+            path: None,
         }
     }
 
     /// Execute plan and remove timestamped files not matching any slots
-    pub fn execute(&self) {
+    pub fn execute(&self) -> Result<(), BackedUpError> {
+        //Check if path has write permission
+        if let Some(path) = &self.path {
+            if path
+                .metadata()
+                .map_err(|e| BackedUpError::ReadDirError {
+                    source: IoError(e),
+                    path: path.to_path_buf(),
+                })?
+                .permissions()
+                .readonly()
+            {
+                error!("No write permission for path {}", path.to_str().unwrap());
+                return Err(BackedUpError::PathPermissionError(path.to_path_buf()));
+            }
+        }
+
         if self.to_remove.is_empty() {
             info!("No file to remove")
         }
+
+        //Remove files
         for p in self.to_remove.iter() {
             let filename = p.to_str().unwrap();
             match remove_file(p) {
@@ -350,6 +375,7 @@ impl Plan {
                 }
             }
         }
+        Ok(())
     }
 }
 

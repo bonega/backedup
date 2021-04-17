@@ -36,7 +36,7 @@ fn main() -> Result<()> {
                 plan.to_keep.len()
             );
         }
-        plan.execute();
+        plan.execute()?;
     } else {
         println!("{}", plan);
     }

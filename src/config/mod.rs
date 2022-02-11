@@ -1,5 +1,5 @@
 use anyhow::Error;
-use argh::FromArgs;
+use clap::Parser;
 
 use backedup::{Config, Plan, SlotConfig};
 
@@ -7,54 +7,53 @@ use crate::config;
 
 mod file;
 
-#[derive(FromArgs)]
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
 ///Backedup
 pub struct ArgParser {
-    #[argh(positional)]
     path: String,
 
-    ///config file
-    #[argh(option, short = 'c')]
+    #[clap(short, long)]
     config: Option<String>,
 
     ///wildcard filename pattern to look for, quote it to prevent shell expansion.
     /// Can be provided several times
-    #[argh(option, short = 'p')]
+    #[clap(short, long)]
     pattern: Vec<String>,
 
     ///set number of backups for yearly slot
-    #[argh(option, default = "0", short = 'y')]
+    #[clap(default_value_t = 0, short, long)]
     yearly: usize,
 
     ///set number of backups for monthly slot
-    #[argh(option, default = "0", short = 'm')]
+    #[clap(default_value_t = 0, short, long)]
     monthly: usize,
 
     ///set number of backups for daily slot
-    #[argh(option, default = "0", short = 'd')]
+    #[clap(default_value_t = 0, short, long)]
     daily: usize,
 
     ///set number of backups for hourly slot
-    #[argh(option, default = "0", short = 'h')]
+    #[clap(default_value_t = 0, short, long)]
     hourly: usize,
 
     ///set number of backups for minutely slot
-    #[argh(option, default = "0", short = 'M')]
+    #[clap(default_value_t = 0, short('M'), long)]
     minutely: usize,
 
     ///provide alternate regex for parsing timeslots. At least year, month and day must be provided and named
     /// eg '(?P<year>\d{{2}})(?P<month>\d{{2}})(?P<day>\d{{2}})'
-    #[argh(option)]
+    #[clap(short, long)]
     regex: Option<String>,
 
     ///execute plan and remove timestamped files not matching a slot
-    #[argh(switch)]
+    #[clap(short, long)]
     pub(crate) execute: bool,
 }
 
 impl ArgParser {
     pub fn new() -> Self {
-        argh::from_env()
+        ArgParser::parse()
     }
 
     pub fn to_plan(&self) -> anyhow::Result<Plan> {

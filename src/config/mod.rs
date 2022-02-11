@@ -72,6 +72,6 @@ impl ArgParser {
             }
         };
 
-        Plan::new(&config, &self.path).map_err(|e| Error::new(e))
+        Plan::new(&config, &self.path).map_err(Error::new)
     }
 }

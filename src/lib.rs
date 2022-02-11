@@ -92,14 +92,14 @@ impl Config {
         pattern: &[String],
         re_str: Option<&str>,
     ) -> Result<Self, BackedUpError> {
-        let pattern = pattern.into_iter().map(|s| WildMatch::new(s)).collect();
+        let pattern = pattern.iter().map(|s| WildMatch::new(s)).collect();
         let re = match re_str {
             None => (*RE).clone(),
             Some(s) => Regex::new(s)?,
         };
-        let capture_names: Vec<_> = re.capture_names().flatten().collect();
+        
         for i in ["year", "month", "day"].iter() {
-            if !capture_names.contains(i) {
+            if !re.capture_names().flatten().any(|x| x == *i) {
                 return Err(BackedUpError::MissingCaptureGroup(i));
             }
         }
@@ -170,7 +170,7 @@ pub enum Period {
 }
 
 impl Period {
-    fn to_string(&self) -> &'static str {
+    fn to_string(self) -> &'static str {
         match self {
             Period::Years => "Years",
             Period::Months => "Months",
@@ -233,7 +233,7 @@ impl Display for Plan {
             let periods: Vec<_> = periods.iter().map(|x| x.to_string()).collect();
             writeln!(f, "-> ({})", periods.join(","))?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
         writeln!(
             f,
             "\t{}Remove {} file(s) not matching periods",
@@ -254,14 +254,14 @@ impl Plan {
             path: path.as_ref().to_path_buf(),
         })?;
         let entries: Vec<_> = dir.flatten().map(|x| x.path()).collect();
-        let mut plan = Self::from(&config, &entries);
+        let mut plan = Self::from(config, &entries);
         plan.path = Some(path.as_ref().to_path_buf());
         Ok(plan)
     }
 
     fn from(config: &Config, entries: &[PathBuf]) -> Self {
         let entries: BTreeSet<_> = entries
-            .into_iter()
+            .iter()
             .filter_map(|x| BackupEntry::new(x, &config.pattern, &config.re))
             .collect();
         let mut year_slots = BTreeMap::new();
@@ -330,7 +330,7 @@ impl Plan {
             .map(|x| x.path.to_path_buf())
             .collect();
         let to_keep: Vec<_> = to_keep.into_iter().map(|x| x.path.to_path_buf()).collect();
-        assert_eq!(entries.len(), &to_keep.len() + &to_remove.len());
+        assert_eq!(entries.len(), to_keep.len() + to_remove.len());
         Self {
             to_keep,
             to_remove,
@@ -415,7 +415,7 @@ mod tests {
             ".log",
         ));
         let slot_config = SlotConfig::new(3, 0, 0, 0, 0).unwrap();
-        let mut config = Config::new(slot_config, &vec![], None).unwrap();
+        let mut config = Config::new(slot_config, &[], None).unwrap();
 
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 3);
@@ -439,7 +439,7 @@ mod tests {
         let parsed_backups = create_test_data(fmt, Utc.ymd(2015, 1, 1).and_hms(0, 0, 0), 400, "");
         let slot_config = SlotConfig::new(3, 13, 30, 0, 0).unwrap();
         let re_str = r"(?P<year>\d{2})(?P<month>\d{2})(?P<day>\d{2})";
-        let config = Config::new(slot_config, &vec![], Some(re_str)).unwrap();
+        let config = Config::new(slot_config, &[], Some(re_str)).unwrap();
         let plan = Plan::from(&config, &parsed_backups);
         assert_eq!(plan.to_keep.len(), 43);
     }
@@ -455,21 +455,21 @@ mod tests {
         let slot_config = SlotConfig::new(1, 0, 0, 0, 0).unwrap();
         let re_str = r"(?P<month>\d{2})(?P<day>\d{2})";
 
-        let config = Config::new(slot_config, &vec![], Some(re_str));
+        let config = Config::new(slot_config, &[], Some(re_str));
         assert_eq!(
             BackedUpError::MissingCaptureGroup("year"),
             config.err().unwrap()
         );
 
         let re_str = r"(?P<year>\d{2})(?P<day>\d{2})";
-        let config = Config::new(slot_config, &vec![], Some(re_str));
+        let config = Config::new(slot_config, &[], Some(re_str));
         assert_eq!(
             BackedUpError::MissingCaptureGroup("month"),
             config.err().unwrap()
         );
 
         let re_str = r"(?P<year>\d{2})(?P<month>\d{2})";
-        let config = Config::new(slot_config, &vec![], Some(re_str));
+        let config = Config::new(slot_config, &[], Some(re_str));
         assert_eq!(
             BackedUpError::MissingCaptureGroup("day"),
             config.err().unwrap()
@@ -480,7 +480,7 @@ mod tests {
     fn test_invalid_regex() {
         let re_str = r"/(notaregex";
         let slot_config = SlotConfig::new(1, 0, 0, 0, 0).unwrap();
-        let config = Config::new(slot_config, &vec![], Some(re_str));
+        let config = Config::new(slot_config, &[], Some(re_str));
         assert!(matches!(
             config.err().unwrap(),
             BackedUpError::InvalidRegex(_)
@@ -493,7 +493,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
         let invalid_utf = b"2021-04-11\xe7";
         let path = PathBuf::from(OsString::from_vec(invalid_utf.to_vec()));
-        let entry = BackupEntry::new(&path, &vec![], &RE);
+        let entry = BackupEntry::new(&path, &[], &RE);
         assert_eq!(entry, None);
     }
 }

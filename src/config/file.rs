@@ -33,7 +33,7 @@ pub fn from(path: &str) -> anyhow::Result<Config> {
         slots.hourly,
         slots.minutely,
     )?;
-    Config::new(slot_config, &config.pattern, config.regex.as_deref()).map_err(|e| Error::new(e))
+    Config::new(slot_config, &config.pattern, config.regex.as_deref()).map_err(Error::new)
 }
 
 #[cfg(test)]
